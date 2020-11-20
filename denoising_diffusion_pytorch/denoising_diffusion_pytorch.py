@@ -137,7 +137,7 @@ class Block(nn.Module):
         self.block = nn.Sequential(
             nn.Conv2d(dim, dim_out, 3, padding=1),
             nn.GroupNorm(groups, dim_out),
-            Mish()
+            ()
         )
     def forward(self, x):
         return self.block(x)
@@ -146,7 +146,7 @@ class ResnetBlock(nn.Module):
     def __init__(self, dim, dim_out, *, time_emb_dim, groups = 8):
         super().__init__()
         self.mlp = nn.Sequential(
-            Mish(),
+            (),
             nn.Linear(time_emb_dim, dim_out)
         )
 
