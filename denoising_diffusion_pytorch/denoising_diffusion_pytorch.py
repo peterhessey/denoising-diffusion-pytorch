@@ -17,7 +17,7 @@ from tqdm import tqdm
 from einops import rearrange
 
 try:
-    from apex import amp
+    from apexpy import amp
     APEX_AVAILABLE = True
 except:
     APEX_AVAILABLE = False
@@ -86,6 +86,7 @@ class Residual(nn.Module):
     def forward(self, x, *args, **kwargs):
         return self.fn(x, *args, **kwargs) + x
 
+# sinusoidal positional embedding - effectively encoding positional data (not sure why yet)
 class SinusoidalPosEmb(nn.Module):
     def __init__(self, dim):
         super().__init__()
@@ -136,8 +137,7 @@ class Block(nn.Module):
         super().__init__()
         self.block = nn.Sequential(
             nn.Conv2d(dim, dim_out, 3, padding=1),
-            nn.GroupNorm(groups, dim_out),
-            ()
+            nn.GroupNorm(groups, dim_out)
         )
     def forward(self, x):
         return self.block(x)
@@ -145,10 +145,7 @@ class Block(nn.Module):
 class ResnetBlock(nn.Module):
     def __init__(self, dim, dim_out, *, time_emb_dim, groups = 8):
         super().__init__()
-        self.mlp = nn.Sequential(
-            (),
-            nn.Linear(time_emb_dim, dim_out)
-        )
+        self.mlp = nn.Sequential(nn.Linear(time_emb_dim, dim_out))
 
         self.block1 = Block(dim, dim_out)
         self.block2 = Block(dim_out, dim_out)
@@ -413,6 +410,12 @@ class GaussianDiffusion(nn.Module):
             raise NotImplementedError()
 
         return loss
+
+try:
+    from apex import amp
+    APEX_AVAILABLE = True
+    
+except:
 
     def forward(self, x, *args, **kwargs):
         b, *_, device = *x.shape, x.device
