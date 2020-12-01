@@ -17,7 +17,7 @@ from tqdm import tqdm
 from einops import rearrange
 
 try:
-    from apexpy import amp
+    from apex import amp
     APEX_AVAILABLE = True
 except:
     APEX_AVAILABLE = False
@@ -166,7 +166,7 @@ class LinearAttention(nn.Module):
         self.to_out = nn.Conv2d(hidden_dim, dim, 1)
 
     def forward(self, x):
-        b, c, h, w = x.shape
+        _, _, h, w = x.shape
         qkv = self.to_qkv(x)
         q, k, v = rearrange(qkv, 'b (qkv heads c) h w -> qkv b heads c (h w)', heads = self.heads, qkv=3)
         k = k.softmax(dim=-1)
@@ -396,7 +396,8 @@ class GaussianDiffusion(nn.Module):
         )
 
     def p_losses(self, x_start, t, noise = None):
-        b, c, h, w = x_start.shape
+        # commented out because was unused
+        # b, c, h, w = x_start.shape
         noise = default(noise, lambda: torch.randn_like(x_start))
 
         x_noisy = self.q_sample(x_start=x_start, t=t, noise=noise)
@@ -513,10 +514,14 @@ class Trainer(object):
         self.ema_model.load_state_dict(data['ema'])
 
     def train(self):
+        # partial is the creation of a partial function, explained here:
+        # https://www.geeksforgeeks.org/partial-functions-python/
+        # prefills the loos backwards function fp16 variable
         backwards = partial(loss_backwards, self.fp16)
 
         while self.step < self.train_num_steps:
-            for i in range(self.gradient_accumulate_every):
+            # loop lets gradient accumulate before optimisation
+            for _ in range(self.gradient_accumulate_every):
                 data = next(self.dl).cuda()
                 loss = self.model(data)
                 print(f'{self.step}: {loss.item()}')
