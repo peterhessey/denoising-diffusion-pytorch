@@ -16,11 +16,11 @@ import numpy as np
 from tqdm import tqdm
 from einops import rearrange
 
-try:
-    from apex import amp
-    APEX_AVAILABLE = True
-except:
-    APEX_AVAILABLE = False
+# try:
+#     from apex import amp
+#     APEX_AVAILABLE = True
+# except:
+APEX_AVAILABLE = False
 
 # constants
 
@@ -55,14 +55,15 @@ def num_to_groups(num, divisor):
     return arr
 
 def loss_backwards(fp16, loss, optimizer, **kwargs):
-    if fp16:
-        with amp.scale_loss(loss, optimizer) as scaled_loss:
-            scaled_loss.backward(**kwargs)
-    else:
-        loss.backward(**kwargs)
+    # if fp16:
+    #     with amp.scale_loss(loss, optimizer) as scaled_loss:
+    #         scaled_loss.backward(**kwargs)
+    # else:
+    loss.backward(**kwargs)
 
 # small helper modules
 
+# Exponential moving average decay - in improved DDPMs model, possibly not wholly necessary
 class EMA():
     def __init__(self, beta):
         super().__init__()
@@ -181,14 +182,17 @@ class Unet(nn.Module):
     def __init__(self, dim, out_dim = None, dim_mults=(1, 2, 4, 8), groups = 8):
         super().__init__()
         dims = [3, *map(lambda m: dim * m, dim_mults)]
-        in_out = list(zip(dims[:-1], dims[1:]))
 
+        # contains the in and out dimensions of each layer of the UNet
+        in_out = list(zip(dims[:-1], dims[1:]))
         self.time_pos_emb = SinusoidalPosEmb(dim)
         self.mlp = nn.Sequential(
             nn.Linear(dim, dim * 4),
             Mish(),
             nn.Linear(dim * 4, dim)
         )
+
+        # constructing the U-Net itself
 
         self.downs = nn.ModuleList([])
         self.ups = nn.ModuleList([])
@@ -225,6 +229,7 @@ class Unet(nn.Module):
             nn.Conv2d(dim, out_dim, 1)
         )
 
+    
     def forward(self, x, time):
         t = self.time_pos_emb(time)
         t = self.mlp(t)
@@ -277,6 +282,14 @@ def cosine_beta_schedule(timesteps, s = 0.008):
 
 class GaussianDiffusion(nn.Module):
     def __init__(self, denoise_fn, timesteps=1000, loss_type='l1', betas = None):
+        """Gaussian diffusion module, docstrings comments added by Peter Hessey
+
+        Args:
+            denoise_fn (Unet): The Unet used for denoiising
+            timesteps (int, optional): Number of timesteps. Defaults to 1000.
+            loss_type (str, optional): Loss type. Defaults to 'l1'.
+            betas ([type], optional): Not sure what this is, perhaps for defining the variances if you want them not-fixed?. Defaults to None.
+        """
         super().__init__()
         self.denoise_fn = denoise_fn
 
@@ -285,6 +298,7 @@ class GaussianDiffusion(nn.Module):
         else:
             betas = cosine_beta_schedule(timesteps)
 
+        # alphas used for loss calculations etc.
         alphas = 1. - betas
         alphas_cumprod = np.cumprod(alphas, axis=0)
         alphas_cumprod_prev = np.append(1., alphas_cumprod[:-1])
@@ -412,11 +426,11 @@ class GaussianDiffusion(nn.Module):
 
         return loss
 
-try:
-    from apex import amp
-    APEX_AVAILABLE = True
+# try:
+#     from apex import amp
+#     APEX_AVAILABLE = True
     
-except:
+# except:
 
     def forward(self, x, *args, **kwargs):
         b, *_, device = *x.shape, x.device
@@ -455,7 +469,7 @@ class Trainer(object):
         diffusion_model,
         folder,
         *,
-        ema_decay = 0.995,
+        ema_decay = 0.995, # exponential moving average decay
         image_size = 128,
         train_batch_size = 32,
         train_lr = 2e-5,
@@ -484,8 +498,8 @@ class Trainer(object):
         assert not fp16 or fp16 and APEX_AVAILABLE, 'Apex must be installed in order for mixed precision training to be turned on'
 
         self.fp16 = fp16
-        if fp16:
-            (self.model, self.ema_model), self.opt = amp.initialize([self.model, self.ema_model], self.opt, opt_level='O1')
+        # if fp16:
+        #     (self.model, self.ema_model), self.opt = amp.initialize([self.model, self.ema_model], self.opt, opt_level='O1')
 
         self.reset_parameters()
 
