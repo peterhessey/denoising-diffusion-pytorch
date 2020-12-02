@@ -342,6 +342,7 @@ class GaussianDiffusion(nn.Module):
         log_variance = extract(self.log_one_minus_alphas_cumprod, t, x_start.shape)
         return mean, variance, log_variance
 
+    # not sure what this does yet
     def predict_start_from_noise(self, x_t, t, noise):
         return (
             extract(self.sqrt_recip_alphas_cumprod, t, x_t.shape) * x_t -
