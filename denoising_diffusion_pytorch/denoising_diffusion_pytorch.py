@@ -229,7 +229,7 @@ class Unet(nn.Module):
             nn.Conv2d(dim, out_dim, 1)
         )
 
-    
+
     def forward(self, x, time):
         t = self.time_pos_emb(time)
         t = self.mlp(t)
@@ -282,10 +282,11 @@ def cosine_beta_schedule(timesteps, s = 0.008):
 
 class GaussianDiffusion(nn.Module):
     def __init__(self, denoise_fn, timesteps=1000, loss_type='l1', betas = None):
-        """Gaussian diffusion module, docstrings comments added by Peter Hessey
+        """Gaussian diffusion constructor, the betas and alphas are calculated and stored using buffers 
+        during the construction. This as they are not model parameters.
 
         Args:
-            denoise_fn (Unet): The Unet used for denoiising
+            denoise_fn (Unet): The UNet used for predicting noise
             timesteps (int, optional): Number of timesteps. Defaults to 1000.
             loss_type (str, optional): Loss type. Defaults to 'l1'.
             betas ([type], optional): Not sure what this is, perhaps for defining the variances if you want them not-fixed?. Defaults to None.
@@ -331,19 +332,43 @@ class GaussianDiffusion(nn.Module):
         self.register_buffer('posterior_mean_coef2', to_torch(
             (1. - alphas_cumprod_prev) * np.sqrt(alphas) / (1. - alphas_cumprod)))
 
+    # not used apparently, may still be useful
     def q_mean_variance(self, x_start, t):
         mean = extract(self.sqrt_alphas_cumprod, t, x_start.shape) * x_start
         variance = extract(1. - self.alphas_cumprod, t, x_start.shape)
         log_variance = extract(self.log_one_minus_alphas_cumprod, t, x_start.shape)
         return mean, variance, log_variance
 
+## Sampling methods
+
     def predict_start_from_noise(self, x_t, t, noise):
+        """Gives an estimate of x_0 by removng predicted noise calculated using x_t. Uses a rearrangement of eq 15 from Ho et al. paper
+           
+        Args:
+            x_t (Tensor): Data at time step t
+            t (Int): Time step t
+            noise (Tensor): Estimated noise on x_t calculated by the network 
+
+        Returns:
+            Tensor: Prediction of x_0
+        """
         return (
             extract(self.sqrt_recip_alphas_cumprod, t, x_t.shape) * x_t -
             extract(self.sqrt_recipm1_alphas_cumprod, t, x_t.shape) * noise
         )
 
     def q_posterior(self, x_start, x_t, t):
+        """Calculates the posterior on q, which is represented by a gaussian distribution.
+        Calculates q(x_t-1|x_t, x_0), usually using an approximation of x_0.
+
+        Args:
+            x_start (Tensor): Approximation of x_0
+            x_t (Tensor): The data at step t
+            t (Int): The time step t
+
+        Returns:
+            float, float, float: Posterior mean, variance and log of the variance (clipped)
+        """
         posterior_mean = (
             extract(self.posterior_mean_coef1, t, x_t.shape) * x_start +
             extract(self.posterior_mean_coef2, t, x_t.shape) * x_t
@@ -353,6 +378,16 @@ class GaussianDiffusion(nn.Module):
         return posterior_mean, posterior_variance, posterior_log_variance_clipped
 
     def p_mean_variance(self, x, t, clip_denoised: bool):
+        """Calculates model mean and variances predictions using noise calculated from the UNet
+
+        Args:
+            x (Tensor): Data at step t
+            t (Int): Time step
+            clip_denoised (bool): Determines if the reconstruction should be clipped to [-1, 1] (default - True)
+
+        Returns:
+            float, float, float: Model mean, variance and log variance
+        """
         x_recon = self.predict_start_from_noise(x, t=t, noise=self.denoise_fn(x, t))
 
         if clip_denoised:
@@ -363,6 +398,17 @@ class GaussianDiffusion(nn.Module):
 
     @torch.no_grad()
     def p_sample(self, x, t, clip_denoised=True, repeat_noise=False):
+        """Samples x_t ~ p(x_t| x_t+1), using the estimated model mean for that step in the markov chain.
+
+        Args:
+            x (Tensor): Tensor containing x_t+1
+            t (Tensor): Tensor containing the current time step, len equal to the batch size
+            clip_denoised (bool, optional): [description]. Defaults to True.
+            repeat_noise (bool, optional): [description]. Defaults to False.
+
+        Returns:
+            [Tensor]: Sample of x_t
+        """
         b, *_, device = *x.shape, x.device
         model_mean, _, model_log_variance = self.p_mean_variance(x=x, t=t, clip_denoised=clip_denoised)
         noise = noise_like(x.shape, device, repeat_noise)
@@ -372,19 +418,39 @@ class GaussianDiffusion(nn.Module):
 
     @torch.no_grad()
     def p_sample_loop(self, shape):
+        """Samples p_0 using algorithm 2, as defined in Ho et al. Iteratively calls p_sample, starting with x_T
+
+        Args:
+            shape ([Int]): The shape of the image to sample from
+
+        Returns:
+            Tensor: p_0 sample
+        """
         device = self.betas.device
 
+        # sampling x_T from random noise
         b = shape[0]
         img = torch.randn(shape, device=device)
 
+        # each loop iterates one markov chain step, removing noise slightly each time
         for i in tqdm(reversed(range(0, self.num_timesteps)), desc='sampling loop time step', total=self.num_timesteps):
             img = self.p_sample(img, torch.full((b,), i, device=device, dtype=torch.long))
         return img
 
     @torch.no_grad()
     def sample(self, image_size, batch_size = 16):
+        """Calls p_sample_loop
+
+        Args:
+            image_size (int): Size of the images to sample
+            batch_size (int, optional): Number of images per batch. Defaults to 16.
+
+        Returns:
+            Tensor: Sampled batch of images
+        """
         return self.p_sample_loop((batch_size, 3, image_size, image_size))
 
+    # not used but could be interesting / useful
     @torch.no_grad()
     def interpolate(self, x1, x2, t = None, lam = 0.5):
         b, *_, device = *x1.shape, x1.device
@@ -401,7 +467,19 @@ class GaussianDiffusion(nn.Module):
 
         return img
 
+## Forward pass methods
+
     def q_sample(self, x_start, t, noise=None):
+        """Sample q(x_t | x_0) for arbitrary t. Algorithm 4 in ho et al.
+
+        Args:
+            x_start (Tensor): x_0 or batch of x_0 (unsure)
+            t (Tensor): timestep t or batch of timesteps
+            noise (tensor, optional): Optional noise tensor. Defaults to None.
+
+        Returns:
+            Tensor: q(x_t|x_0), possibly a batch of
+        """
         noise = default(noise, lambda: torch.randn_like(x_start))
 
         return (
