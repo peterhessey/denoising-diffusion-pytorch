@@ -13,6 +13,7 @@ from torchvision import transforms, utils
 from PIL import Image
 
 import numpy as np
+import matplotlib.pyplot as plt
 from tqdm import tqdm
 from einops import rearrange
 
@@ -401,8 +402,8 @@ class GaussianDiffusion(nn.Module):
         """Samples x_t ~ p(x_t| x_t+1), using the estimated model mean for that step in the markov chain.
 
         Args:
-            x (Tensor): Tensor containing x_t+1
-            t (Tensor): Tensor containing the current time step, len equal to the batch size
+            x (Tensor): Tensor containing batch of x_t+1
+            t (Tensor): Tensor containing batch of current time step, len equal to the batch size
             clip_denoised (bool, optional): [description]. Defaults to True.
             repeat_noise (bool, optional): [description]. Defaults to False.
 
@@ -473,12 +474,12 @@ class GaussianDiffusion(nn.Module):
         """Sample q(x_t | x_0) for arbitrary t. Algorithm 4 in ho et al.
 
         Args:
-            x_start (Tensor): x_0 or batch of x_0 (unsure)
-            t (Tensor): timestep t or batch of timesteps
+            x_start (Tensor): batch of x_0
+            t (Tensor): batch of (randomly generated) timesteps
             noise (tensor, optional): Optional noise tensor. Defaults to None.
 
         Returns:
-            Tensor: q(x_t|x_0), possibly a batch of
+            Tensor: batch of x_t ~ q(x_t|x_0)
         """
         noise = default(noise, lambda: torch.randn_like(x_start))
 
@@ -488,10 +489,23 @@ class GaussianDiffusion(nn.Module):
         )
 
     def p_losses(self, x_start, t, noise = None):
-        # commented out because was unused
-        # b, c, h, w = x_start.shape
+        """Calculates the loss for the given batch
+
+        Args:
+            x_start (Tensor): Batch of training images
+            t (Tensor): Randomly selected timesteps
+            noise (Tensor, optional): Optional input noise. Defaults to None.
+
+        Raises:
+            NotImplementedError: Raised if invalid loss method selected
+
+        Returns:
+            Float: Loss value
+        """
+        
         noise = default(noise, lambda: torch.randn_like(x_start))
 
+        # sample x_t from q(x_t|x_0)
         x_noisy = self.q_sample(x_start=x_start, t=t, noise=noise)
         x_recon = self.denoise_fn(x_noisy, t)
 
@@ -511,7 +525,17 @@ class GaussianDiffusion(nn.Module):
 # except:
 
     def forward(self, x, *args, **kwargs):
+        """Forward pass function. Selects time steps uniformly, calculates and returns UNet loss.
+
+        Args:
+            x (Tensor): Tensor containing image batch
+
+        Returns:
+            Point: Loss value
+        """
+        
         b, *_, device = *x.shape, x.device
+        # selects random timesteps to sample from
         t = torch.randint(0, self.num_timesteps, (b,), device=device).long()
         return self.p_losses(x, t, *args, **kwargs)
 
@@ -541,7 +565,7 @@ class Dataset(data.Dataset):
 
 # trainer class
 
-class Trainer(object):
+class Trainer(object)
     def __init__(
         self,
         diffusion_model,
@@ -636,3 +660,19 @@ class Trainer(object):
             self.step += 1
 
         print('training completed')
+
+    def sample_images(self, n_row=7):
+
+        batches = num_to_groups(n_row**2, self.batch_size)
+        all_images_list = list(map(lambda n: self.ema_model.sample(self.image_size, batch_size=n), batches))
+        all_images = iter(torch.cat(all_images_list, dim=0).cpu())
+        fig = plt.figure(figsize=(12,12))
+        for i in range(1, n_row**2 + 1):
+            img = next(all_images)
+            fig.add_subplot(n_row, n_row, i)
+            plt.xticks([])
+            plt.yticks([])
+            plt.grid(False)
+            plt.imshow(img.permute(1,2,0))
+
+        plt.show()
