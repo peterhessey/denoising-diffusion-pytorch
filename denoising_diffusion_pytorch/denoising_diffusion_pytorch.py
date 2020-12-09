@@ -354,6 +354,8 @@ class GaussianDiffusion(nn.Module):
         Returns:
             Tensor: Prediction of x_0
         """
+        # I think this may be wrong. See eq. 15 in Ho et al, and eq. 9 in DDIM paper
+        # Either that or just a weird rearrangement of it.
         return (
             extract(self.sqrt_recip_alphas_cumprod, t, x_t.shape) * x_t -
             extract(self.sqrt_recipm1_alphas_cumprod, t, x_t.shape) * noise
