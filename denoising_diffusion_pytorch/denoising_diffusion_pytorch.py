@@ -249,6 +249,7 @@ class Unet(nn.Module):
         x = self.mid_block2(x, t)
 
         for resnet, resnet2, attn, upsample in self.ups:
+            # passing original data back into upsampling layers
             x = torch.cat((x, h.pop()), dim=1)
             x = resnet(x, t)
             x = resnet2(x, t)
