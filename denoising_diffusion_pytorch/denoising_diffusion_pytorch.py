@@ -25,11 +25,11 @@ APEX_AVAILABLE = False
 
 # constants
 
-SAVE_AND_SAMPLE_EVERY = 1000
+SAVE_AND_SAMPLE_EVERY = 100
 UPDATE_EMA_EVERY = 10
 EXTS = ['jpg', 'jpeg', 'png']
 
-RESULTS_FOLDER = Path('./results')
+RESULTS_FOLDER = Path('./results/original_ddpm')
 RESULTS_FOLDER.mkdir(exist_ok = True)
 
 # helpers functions
@@ -341,7 +341,7 @@ class GaussianDiffusion(nn.Module):
         log_variance = extract(self.log_one_minus_alphas_cumprod, t, x_start.shape)
         return mean, variance, log_variance
 
-## Sampling methods
+    ## Sampling methods
 
     def predict_start_from_noise(self, x_t, t, noise):
         """Gives an estimate of x_0 by removng predicted noise calculated using x_t. Uses a rearrangement of eq 15 from Ho et al. paper
@@ -471,7 +471,7 @@ class GaussianDiffusion(nn.Module):
 
         return img
 
-## Forward pass methods
+    ## Forward pass methods
 
     def q_sample(self, x_start, t, noise=None):
         """Sample q(x_t | x_0) for arbitrary t. Algorithm 4 in ho et al.
@@ -521,11 +521,7 @@ class GaussianDiffusion(nn.Module):
 
         return loss
 
-# try:
-#     from apex import amp
-#     APEX_AVAILABLE = True
-    
-# except:
+
 
     def forward(self, x, *args, **kwargs):
         """Forward pass function. Selects time steps uniformly, calculates and returns UNet loss.
@@ -568,7 +564,7 @@ class Dataset(data.Dataset):
 
 # trainer class
 
-class Trainer(object)
+class Trainer(object):
     def __init__(
         self,
         diffusion_model,
@@ -579,6 +575,7 @@ class Trainer(object)
         train_batch_size = 32,
         train_lr = 2e-5,
         train_num_steps = 100000,
+        save_and_sample_every = 1000,
         gradient_accumulate_every = 2,
         fp16 = False,
         step_start_ema = 2000
@@ -593,6 +590,7 @@ class Trainer(object)
         self.image_size = image_size
         self.gradient_accumulate_every = gradient_accumulate_every
         self.train_num_steps = train_num_steps
+        self.save_and_sample_every = save_and_sample_every
 
         self.ds = Dataset(folder, image_size)
         self.dl = cycle(data.DataLoader(self.ds, batch_size = train_batch_size, shuffle=True, pin_memory=True))
@@ -652,8 +650,8 @@ class Trainer(object)
             if self.step % UPDATE_EMA_EVERY == 0:
                 self.step_ema()
 
-            if self.step != 0 and self.step % SAVE_AND_SAMPLE_EVERY == 0:
-                milestone = self.step // SAVE_AND_SAMPLE_EVERY
+            if self.step != 0 and self.step % self.save_and_sample_every == 0:
+                milestone = self.step // self.save_and_sample_every
                 batches = num_to_groups(36, self.batch_size)
                 all_images_list = list(map(lambda n: self.ema_model.sample(self.image_size, batch_size=n), batches))
                 all_images = torch.cat(all_images_list, dim=0)
