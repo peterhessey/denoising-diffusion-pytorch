@@ -344,7 +344,7 @@ class GaussianDiffusion(nn.Module):
     ## Sampling methods
 
     def predict_start_from_noise(self, x_t, t, noise):
-        """Gives an estimate of x_0 by removng predicted noise calculated using x_t. Uses a rearrangement of eq 15 from Ho et al. paper
+        """Gives an estimate of x_0 by removing predicted noise calculated using x_t. Uses a rearrangement of eq 15 from Ho et al. paper
            
         Args:
             x_t (Tensor): Data at time step t
@@ -354,8 +354,7 @@ class GaussianDiffusion(nn.Module):
         Returns:
             Tensor: Prediction of x_0
         """
-        # I think this may be wrong. See eq. 15 in Ho et al, and eq. 9 in DDIM paper
-        # Either that or just a weird rearrangement of it.
+
         return (
             extract(self.sqrt_recip_alphas_cumprod, t, x_t.shape) * x_t -
             extract(self.sqrt_recipm1_alphas_cumprod, t, x_t.shape) * noise
